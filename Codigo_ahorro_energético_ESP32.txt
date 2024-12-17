@@ -1,0 +1,174 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <esp_wifi.h>
+#include <esp_bt.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <ArduinoJson.h>
+#include <Wire.h>
+#include <WiFiClientSecure.h>
+
+// Configuración de red Wi-Fi
+const char* ssid = "PEREGRINO_2.4";
+const char* password = "SHER1948";
+
+// Configuración del servidor MQTT
+const char* mqtt_server = "qe514151.ala.us-east-1.emqxsl.com";
+const int mqtt_port = 8883;
+const char* mqtt_topic = "esp32/tesis";
+const char* mqtt_username = "test";
+const char* mqtt_password = "1234";
+
+// Certificado CA para MQTT seguro
+const char* ca_cert = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh
+MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
+d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD
+QTAeFw0wNjExMTAwMDAwMDBaFw0zMTExMTAwMDAwMDBaMGExCzAJBgNVBAYTAlVT
+MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j
+b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG
+9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4jvhEXLeqKTTo1eqUKKPC3eQyaKl7hLOllsB
+CSDMAZOnTjC3U/dDxGkAV53ijSLdhwZAAIEJzs4bg7/fzTtxRuLWZscFs3YnFo97
+nh6Vfe63SKMI2tavegw5BmV/Sl0fvBf4q77uKNd0f3p4mVmFaG5cIzJLv07A6Fpt
+43C/dxC//AH2hdmoRBBYMql1GNXRor5H4idq9Joz+EkIYIvUX7Q6hL+hqkpMfT7P
+T19sdl6gSzeRntwi5m3OFBqOasv+zbMUZBfHWymeMr/y7vrTC0LUq7dBMtoM1O/4
+gdW7jVg/tRvoSSiicNoxBN33shbyTApOB6jtSj1etX+jkMOvJwIDAQABo2MwYTAO
+BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUA95QNVbR
+TLtm8KPiGxvDl7I90VUwHwYDVR0jBBgwFoAUA95QNVbRTLtm8KPiGxvDl7I90VUw
+DQYJKoZIhvcNAQEFBQADggEBAMucN6pIExIK+t1EnE9SsPTfrgT1eXkIoyQY/Esr
+hMAtudXH/vTBH1jLuG2cenTnmCmrEbXjcKChzUyImZOMkXDiqw8cvpOp/2PV5Adg
+06O/nVsJ8dWO41P0jmP6P6fbtGbfYmbW0W5BjfIttep3Sp+dWOIrWcBAI+0tKIJF
+PnlUkiaY4IBIqDfv8NZ5YBberOgOzW6sRBc4L0na4UU+Krk2U886UAb3LujEV0ls
+YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk
+CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=
+-----END CERTIFICATE-----
+)EOF";
+
+#define DEEP_SLEEP_INTERVAL 6e8 // 6e6 = 6 segundos | 6e7 = 1 minuto 6e8= 10 minutos
+#define SENSOR A0                // Pin para el sensor ECG
+
+WiFiClientSecure esp_client;
+PubSubClient client(esp_client);
+Adafruit_MPU6050 mpu;
+
+void setup() {
+  Serial.begin(115200);
+
+  // Conexión a Wi-Fi
+  connectWiFi();
+
+  // Inicialización del sensor MPU6050
+  if (!mpu.begin()) {
+    Serial.println("No se encontró el chip MPU6050.");
+    while (1) {
+      delay(10);
+    }
+  }
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
+
+  // Configurar cliente MQTT seguro
+  esp_client.setCACert(ca_cert);
+  client.setBufferSize(158);  // Configurar buffer a 2048 bytes
+  client.setServer(mqtt_server, mqtt_port);
+
+  // Intentar conexión al servidor MQTT y enviar mensaje
+  if (connectMQTT()) {
+    sendMQTTMessage();
+  } else {
+    Serial.println("Error al conectar al servidor MQTT tras varios intentos.");
+  }
+
+  // Apagar Wi-Fi y Bluetooth para ahorrar energía
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  esp_wifi_stop();
+  esp_bt_controller_disable();
+
+  // Entrar en modo deep sleep
+  deepSleep();
+}
+
+void loop() {
+  // Vacío: No se utiliza debido a deep sleep
+}
+
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando a Wi-Fi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConectado a Wi-Fi");
+  Serial.println("Dirección IP:");
+  Serial.println(WiFi.localIP());
+}
+
+bool connectMQTT() {
+  const int maxAttempts = 5;  // Máximo número de intentos
+  int attempts = 0;
+
+  while (!client.connected() && attempts < maxAttempts) {
+    Serial.print("Conectando al servidor MQTT (intento ");
+    Serial.print(attempts + 1);
+    Serial.println(")...");
+
+    if (client.connect("esp32_client", mqtt_username, mqtt_password)) {
+      Serial.println("Conectado al servidor MQTT.");
+      return true;
+    } else {
+      Serial.print("Error al conectar al servidor MQTT. Código de error: ");
+      Serial.println(client.state());
+      attempts++;
+      delay(2000);  // Esperar antes de intentar nuevamente
+    }
+  }
+  return false;
+}
+
+void sendMQTTMessage() {
+  pinMode(SENSOR, INPUT);
+
+  // Obtener datos del sensor MPU6050
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  // Crear mensaje JSON
+  StaticJsonDocument<158> doc;
+  doc["ecg"] = analogRead(SENSOR);
+  doc["mpu"]["accel"]["x"] = a.acceleration.x;
+  doc["mpu"]["accel"]["y"] = a.acceleration.y;
+  doc["mpu"]["accel"]["z"] = a.acceleration.z;
+  doc["mpu"]["gyro"]["x"] = g.gyro.x;
+  doc["mpu"]["gyro"]["y"] = g.gyro.y;
+  doc["mpu"]["gyro"]["z"] = g.gyro.z;
+  doc["mpu"]["temp"] = temp.temperature;
+
+  //Mensaje para variar el tamaño del buffer enviado| Para añadir esta etapa del código debe modificar el valor de la función SetBufferSize - buffer[]-StaticJsonDocument<>  a un valor acorde a los bytes a enviar (Todos con el mismo valor de preferencia).
+  //const char * mensaje= "La medición energética en una ESP32 es esencial para controlar el consumo en proyectos IoT. Con sensores como el ACS712, mide voltaje y corriente de una fuente de energía. Estos datos pueden enviarse a la nube o a un servidor, donde se analizan para optimizar el consumo. Usando Arduino o MicroPython, la ESP32 ajusta valores en ";
+  //doc["mensaje"] = mensaje;
+
+  char buffer[158];
+  size_t len = serializeJson(doc, buffer);
+  Serial.print("Tamaño del mensaje: ");
+  Serial.println(len);
+
+  // Publicar mensaje
+  if (client.publish(mqtt_topic, buffer)) {
+    Serial.println("Mensaje publicado correctamente.");
+  } else {
+    Serial.println("Error al publicar el mensaje.");
+  }
+
+  client.disconnect();  // Desconectar cliente MQTT
+}
+
+void deepSleep() {
+  Serial.println("Entrando en modo deep sleep por 5 segundos...");
+  esp_sleep_enable_timer_wakeup(DEEP_SLEEP_INTERVAL);
+  esp_deep_sleep_start();
+}
