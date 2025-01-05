@@ -1,0 +1,106 @@
+##HISTOGRAMAS PARA VER TENDENCIA O CONCENTRACIÓN DE DATOS
+
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+import pandas as pd
+
+
+# Cargar el archivo CSV
+archivo_csv = "/content/BOXPLOT_compilacion_total_codigo2.csv"  # Cambia esto a la ruta de tu archivo
+data = pd.read_csv(archivo_csv)
+
+
+
+# Función para graficar histogramas agrupados con porcentajes mayores al 5%
+def plot_grouped_histograms_with_percentage(dataframe, prefix, bins=30, min_percentage=3):
+    """
+    Genera un gráfico con histogramas de columnas que comienzan con un prefijo específico,
+    mostrando solo el porcentaje de las barras que representan más del porcentaje mínimo.
+
+    Parámetros:
+    - dataframe: DataFrame con los datos.
+    - prefix: Prefijo para filtrar las columnas.
+    - bins: Número de barras en el histograma.
+    - min_percentage: Porcentaje mínimo para mostrar en las barras.
+    """
+    # Filtrar columnas que comienzan con el prefijo
+    filtered_columns = [col for col in dataframe.columns if col.startswith(prefix)]
+    data_filtered = dataframe[filtered_columns]
+
+    num_columns = len(filtered_columns)
+    if num_columns == 0:
+        print(f"No hay columnas que comiencen con '{prefix}'.")
+        return
+
+    # Configurar subplots
+    cols = 3  # Número de columnas en la cuadrícula de subplots
+    rows = (num_columns // cols) + (num_columns % cols > 0)
+    fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
+    axes = axes.flatten()  # Aplanar la cuadrícula para facilitar el acceso a los ejes
+
+    # Graficar cada columna en su propio subplot
+    for i, column in enumerate(filtered_columns):
+        ax = axes[i]
+        data_col = data_filtered[column].dropna()
+
+        # Generar el histograma
+        counts, bin_edges, patches = ax.hist(data_col, bins=bins, color='blue', alpha=0.7, edgecolor='black')
+
+        # Calcular porcentajes
+        total = len(data_col)
+        percentages = (counts / total) * 100
+
+        # Añadir porcentajes solo para valores mayores al mínimo especificado
+        for patch, percentage in zip(patches, percentages):
+            if percentage >= min_percentage:
+                height = patch.get_height()
+                ax.text(patch.get_x() + patch.get_width() / 2, height, f'{percentage:.1f}%',
+                        ha='center', va='bottom', fontsize=8, color='black')
+
+        # Añadir media y mediana
+        ax.axvline(data_col.mean(), color='red', linestyle='--', label='Media')
+        ax.axvline(data_col.median(), color='green', linestyle='--', label='Mediana')
+
+        # Configurar títulos y etiquetas
+        ax.set_title(f"Columna: {column}")
+        ax.set_xlabel("Valores")
+        ax.set_ylabel("Frecuencia")
+        ax.legend()
+
+    # Eliminar ejes sobrantes si los hay
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.show()
+
+# Ejemplo de uso: Graficar columnas que comiencen con "6seg"
+plot_grouped_histograms_with_percentage(data, prefix="6seg", bins=30, min_percentage=3)
+
+################################################################################################
+################################################################################################
+
+
+
+##MAPA DE CORRELACIONES
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Cargar el archivo CSV
+archivo_csv = "/content/BOXPLOT_compilacion_total_codigo2.csv"  # Cambia esto a la ruta de tu archivo
+data = pd.read_csv(archivo_csv)
+
+# Calcular la matriz de correlaciones
+correlaciones = data.corr()
+
+# Crear el mapa de calor
+plt.figure(figsize=(10, 10))  # Ajustar el tamaño de la figura
+sns.heatmap(correlaciones, annot=False, cmap="coolwarm", fmt=".2f", linewidths=0.5)
+plt.title("Mapa de Calor de Correlaciones")
+plt.show()
+
+
