@@ -1,0 +1,118 @@
+
+##GENERADOR DE GRÁFICOS DE CAJAS
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from pandas.io.parsers.readers import read_csv
+import re
+
+datos = read_csv("/content/BOXPLOT_compilacion_total_codigo2.csv")
+datos.head(1)
+columnas_1seg = [col for col in datos.columns if re.match(r"1seg", col)]
+columnas_5seg = [col for col in datos.columns if re.match(r"6seg", col)]
+columnas_1min = [col for col in datos.columns if re.match(r"1min", col)]
+columnas_10min = [col for col in datos.columns if re.match(r"10min", col)]
+
+primeras_cinco_columnas = columnas_10min[:5]
+ultimas_cinco_columnas = columnas_10min[-5:]
+
+# Crea una figura con dos subplots (1 fila, 2 columnas)
+fig, axes = plt.subplots(1, 2, figsize=(20, 6))  # Tamaño de la figura 
+
+# Primer boxplot (primeras cinco columnas)
+sns.boxplot(data=datos[primeras_cinco_columnas], ax=axes[0])
+axes[0].set_xticklabels(axes[0].get_xticklabels(), rotation=45, ha='right')
+axes[0].set_title("Frecuencia 10 min con TLS")
+axes[0].set_ylim(68, 75)  # Ajusta los límites del eje y (zom a la boxplot)
+
+# Segundo boxplot (últimas cinco columnas)
+sns.boxplot(data=datos[ultimas_cinco_columnas], ax=axes[1])
+axes[1].set_xticklabels(axes[1].get_xticklabels(), rotation=45, ha='right')
+axes[1].set_title("Frecuencia 10 min DEEP SLEEP")
+axes[1].set_ylim(16, 400)  # Ajusta los límites del eje y (zoom a la boxplot)
+
+# Muestra la figura
+plt.show()
+
+#############################################################################
+#############################################################################
+
+
+##GENERADOR DE TABLAS CON DATOS DE LAS BOXPLOTS
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
+datos = read_csv("/content/BOXPLOT_compilacion_total_codigo2.csv")
+datos.head(1)
+
+# Función para generar boxplots y calcular estadísticas
+def generate_boxplot_with_stats(dataframe, prefix):
+    """
+    Genera boxplots para las columnas que comienzan con un prefijo específico
+    y calcula estadísticas descriptivas asociadas a estas columnas.
+
+    Parámetros:
+    - dataframe: DataFrame con los datos.
+    - prefix: Prefijo para filtrar las columnas.
+
+    Retorna:
+    - DataFrame con estadísticas clave de las columnas filtradas.
+    """
+    # Filtrar columnas que comiencen con el prefijo
+    filtered_columns = [col for col in dataframe.columns if col.startswith(prefix)]
+    data_filtered = dataframe[filtered_columns]
+
+    # Preparar lista para estadísticas
+    stats = []
+
+    # Configurar el gráfico
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(data=data_filtered, orient="h")
+    plt.title(f"Frecuencia de 6 Segundos")
+    plt.xlabel("Valores")
+    plt.ylabel("Columnas")
+    plt.show()
+
+    # Calcular estadísticas para cada columna
+    for column in filtered_columns:
+        col_data = data_filtered[column].dropna()
+        q1 = col_data.quantile(0.25)
+        q3 = col_data.quantile(0.75)
+        iqr = q3 - q1
+        lower_whisker = col_data[col_data >= (q1 - 1.5 * iqr)].min()
+        upper_whisker = col_data[col_data <= (q3 + 1.5 * iqr)].max()
+        outliers = col_data[(col_data < (q1 - 1.5 * iqr)) | (col_data > (q3 + 1.5 * iqr))]
+
+        stats.append({
+            "Columna": column,
+            "Promedio": col_data.mean(),
+            "Mediana": col_data.median(),
+            "Q1(25%)": q1,
+            "Q3(75%)": q3,
+            "Bigote Inferior": lower_whisker,
+            "Bigote Superior": upper_whisker,
+            "Cantidad de Outliers": len(outliers),
+            "IQR": iqr,
+            "MAX": col_data.max(),
+            "MIN": col_data.min()
+        })
+
+    # Crear un DataFrame con las estadísticas
+    stats_df = pd.DataFrame(stats)
+
+    # Mostrar la tabla
+    print(stats_df)
+
+    return stats_df
+
+# Ejemplo de uso
+stats_table = generate_boxplot_with_stats(datos, prefix="10min")
+
+
+
+#################################################################################
+#################################################################################
